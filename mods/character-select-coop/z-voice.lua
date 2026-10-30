@@ -79,6 +79,9 @@ for i = 0, MAX_PLAYERS - 1 do
     playerSample[i] = nil
 end
 
+-- Reading and decoding these again on every sound would stall the game
+local failedSamples = {}
+
 --- @param m MarioState
 --- @param sound CharacterSound
 local function custom_character_sound(m, sound)
@@ -87,7 +90,7 @@ local function custom_character_sound(m, sound)
             return NO_SOUND
         end
     end
-    local index = m.playerIndex
+    local index = m.playerIndex == 0 and cs_context_index() or m.playerIndex
     if check_sound_exists(playerSample[index]) and type(playerSample[index]) ~= TYPE_STRING then
         audio_sample_stop(playerSample[index])
     end
@@ -98,10 +101,12 @@ local function custom_character_sound(m, sound)
     if voiceTable == nil then return end
     -- load samples that haven't been loaded
     for voice, name in pairs(voiceTable) do
-        if check_sound_exists(voiceTable[voice]) and type(voiceTable[voice]) == "string" then
+        if type(voiceTable[voice]) == "string" and not failedSamples[name] and check_sound_exists(voiceTable[voice]) then
             local load = audio_sample_load(name)
             if load ~= nil then
                 voiceTable[voice] = load
+            else
+                failedSamples[name] = true
             end
         end
     end
@@ -114,10 +119,12 @@ local function custom_character_sound(m, sound)
     if voice._pointer == nil and type(voice) ~= TYPE_STRING then
         -- run through each sample and load in any samples that haven't been loaded
         for i, name in pairs(voice) do
-            if check_sound_exists(voice[i]) and type(voice[i]) == "string" then
+            if type(voice[i]) == "string" and not failedSamples[name] and check_sound_exists(voice[i]) then
                 local load = audio_sample_load(name)
                 if load ~= nil then
                     voice[i] = load
+                else
+                    failedSamples[name] = true
                 end
             end
         end
@@ -127,8 +134,8 @@ local function custom_character_sound(m, sound)
         end
     end
 
-    -- Play the sample
-    if check_sound_exists(playerSample[index]) then
+    -- Play the sample. One that didn't load stays a string, so the normal voice plays instead
+    if type(playerSample[index]) == TYPE_USERDATA and check_sound_exists(playerSample[index]) then
         if sound == CHAR_SOUND_SNORING1 or sound == CHAR_SOUND_SNORING2 or sound == CHAR_SOUND_SNORING3 then
             audio_sample_play(playerSample[index], m.pos, 0.5)
         else
@@ -187,10 +194,14 @@ local function custom_character_snore(m)
     end
 end
 
+local wasPaused = false
 local function update()
-    if is_game_paused() then
+    -- Once on pausing is enough. Every frame means every clip of every character, every frame
+    local paused = is_game_paused()
+    if paused and not wasPaused then
         stop_all_custom_character_sounds()
     end
+    wasPaused = paused
 end
 
 hook_event(HOOK_UPDATE, update)

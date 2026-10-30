@@ -328,6 +328,9 @@ void buffer_audio(void) {
         for (u16 i = 0; i < ARRAY_COUNT(sAudioBuffer); i++) {
             sAudioBuffer[i] *= gMasterVolume;
         }
+#ifdef __SWITCH__
+        audio_custom_mix(sAudioBuffer, numAudioSamples * 2);
+#endif
         audio_api->play((u8 *)sAudioBuffer, 2 * numAudioSamples * 4);
     }
 }

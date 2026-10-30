@@ -1,6 +1,10 @@
 #define MINIAUDIO_IMPLEMENTATION // required by miniaudio
 #define MA_NO_SDL // We don't use this because it conflicts with audio_sdl2.
 
+// miniaudio only decodes .ogg if it can see this before its implementation
+#define STB_VORBIS_HEADER_ONLY
+#include "pc/utils/stb_vorbis.c"
+
 #include "types.h"
 #include "pc/utils/miniaudio_api.h"
 #include "pc/utils/miniaudio_nx.inl"
@@ -46,7 +50,7 @@ static ma_result ma_context_init__custom_loader(ma_context *pContext, const ma_c
     (void)pCallbacks;
     
     /* NX. */
-#if !defined(MA_NO_NX)
+#if defined(MA_HAS_NX)
     if (result != MA_SUCCESS) {
         result = ma_context_init__nx(pContext, pConfig, pCallbacks);
     }
@@ -92,8 +96,18 @@ ma_result ma_initalize(const ma_engine_config *pConfig, ma_engine *pEngine) {
     } else {
         engineConfig = ma_engine_config_init();
     }
+
+#ifdef __SWITCH__
+    // SDL already holds the audio output here, so the engine doesn't get a device of its
+    // own. buffer_audio() pulls from it instead, at the game's output format
+    engineConfig.noDevice = MA_TRUE;
+    engineConfig.channels = 2;
+    engineConfig.sampleRate = 32000;
+    return ma_engine_init(&engineConfig, pEngine);
+#endif
+
     engineConfig.pContext = (ma_context *)&global_context;
-    
+
     ma_context_config contextConfig = ma_context_config_init();
     contextConfig.custom.onContextInit = ma_context_init__custom_loader;
     
@@ -106,7 +120,10 @@ ma_result ma_initalize(const ma_engine_config *pConfig, ma_engine *pEngine) {
 
 ma_result ma_uninitalize(ma_engine *pEngine) {
     ma_engine_uninit(pEngine);
+#ifndef __SWITCH__
     ma_context_uninit((ma_context *)&global_context);
+#endif
+    return MA_SUCCESS;
 }
 
 ma_result ma_sound_from_buffer(ma_engine *engine, ma_sound *sound, ma_decoder *decoder, void *buffer, u32 size, bool stream) {
@@ -115,5 +132,6 @@ ma_result ma_sound_from_buffer(ma_engine *engine, ma_sound *sound, ma_decoder *d
     if (result != MA_SUCCESS) { return result; }
     
     result = ma_sound_init_from_data_source(engine, decoder, stream ? MA_SOUND_STREAM_FLAGS : MA_SOUND_SAMPLE_FLAGS, NULL, sound);
+    if (result != MA_SUCCESS) { ma_decoder_uninit(decoder); }
     return result;
 }

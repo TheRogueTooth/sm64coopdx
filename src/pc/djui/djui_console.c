@@ -136,6 +136,36 @@ static bool djui_console_on_key_down(UNUSED struct DjuiBase* base, int scancode)
 // There's no way to read the console on the Switch, so keep a copy on the SD card
 #define CONSOLE_LOG_PATH "sdmc:/switch/sm64coopdx/couch-log.txt"
 #define CONSOLE_LOG_MAX_SIZE (1024 * 1024)
+#define CONSOLE_SEEN_SLOTS 2048
+#define CONSOLE_SEEN_PROBES 8
+#define CONSOLE_MAX_REPEATS 4
+
+// A script erroring every frame must not get to spend the frame here, so each exact
+// message only gets through a few times
+static bool djui_console_should_show(const char* message) {
+    static u32 sHashes[CONSOLE_SEEN_SLOTS] = { 0 };
+    static u8 sCounts[CONSOLE_SEEN_SLOTS] = { 0 };
+
+    u32 hash = 5381;
+    for (const char* c = message; *c != '\0'; c++) { hash = hash * 33 + (u8)*c; }
+    if (hash == 0) { hash = 1; }
+
+    for (u32 probe = 0; probe < CONSOLE_SEEN_PROBES; probe++) {
+        u32 slot = (hash + probe) % CONSOLE_SEEN_SLOTS;
+        if (sHashes[slot] == 0) {
+            sHashes[slot] = hash;
+            sCounts[slot] = 1;
+            return true;
+        }
+        if (sHashes[slot] == hash) {
+            if (sCounts[slot] >= CONSOLE_MAX_REPEATS) { return false; }
+            sCounts[slot]++;
+            return true;
+        }
+    }
+    return true;
+}
+
 static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel level) {
     static bool sStarted = false;
     static size_t sWritten = 0;
@@ -151,6 +181,7 @@ static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel
 
 void djui_console_message_create(const char* message, enum ConsoleMessageLevel level) {
 #ifdef __SWITCH__
+    if (!djui_console_should_show(message)) { return; }
     djui_console_log_to_sd(message, level);
     // A script erroring every frame fills this quickly, and freeing the oldest message has
     // crashed here on the Switch. Nothing can read it on this platform, so just stop adding

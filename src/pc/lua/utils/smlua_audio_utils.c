@@ -157,16 +157,40 @@ void smlua_audio_utils_replace_sequence(u8 sequenceId, u8 bankId, u8 defaultVolu
 ///////////////
 
 static ma_engine sModAudioEngine;
+static bool sModAudioEngineReady = false;
 static struct DynamicPool *sModAudioPool;
 
 static void smlua_audio_custom_init(void) {
     sModAudioPool = dynamic_pool_init();
 
     ma_result result = ma_initalize(NULL, &sModAudioEngine);
-    if (result != MA_SUCCESS) {
-        LOG_ERROR("Failed to init Miniaudio: %d", result);
+    sModAudioEngineReady = (result == MA_SUCCESS);
+    if (!sModAudioEngineReady) {
+        LOG_CONSOLE("Failed to init Miniaudio: %d", result);
     }
 }
+
+#ifdef __SWITCH__
+#define MOD_AUDIO_MIX_MAX_FRAMES 2048
+
+// Adds whatever mods are playing into the game's own output buffer
+void audio_custom_mix(s16 *samples, u32 numFrames) {
+    static f32 sMixBuffer[MOD_AUDIO_MIX_MAX_FRAMES * 2];
+
+    if (!sModAudioEngineReady) { return; }
+    if (numFrames > MOD_AUDIO_MIX_MAX_FRAMES) { numFrames = MOD_AUDIO_MIX_MAX_FRAMES; }
+
+    ma_uint64 framesRead = 0;
+    if (ma_engine_read_pcm_frames(&sModAudioEngine, sMixBuffer, numFrames, &framesRead) != MA_SUCCESS) { return; }
+
+    for (u32 i = 0; i < framesRead * 2; i++) {
+        s32 mixed = samples[i] + (s32)(sMixBuffer[i] * 32767.0f);
+        if (mixed > 32767) { mixed = 32767; }
+        if (mixed < -32768) { mixed = -32768; }
+        samples[i] = mixed;
+    }
+}
+#endif
 
 static struct ModAudio* find_mod_audio(struct ModFile* file) {
     struct DynamicPoolNode* node = sModAudioPool->tail;
@@ -197,6 +221,7 @@ static bool audio_sanity_check(struct ModAudio* audio, bool isStream, const char
 
 struct ModAudio* audio_load_internal(const char* filename, bool isStream) {
     if (!sModAudioPool) { smlua_audio_custom_init(); }
+    if (!sModAudioEngineReady) { return NULL; }
 
     // check file type
     bool validFileType = false;
@@ -258,9 +283,12 @@ struct ModAudio* audio_load_internal(const char* filename, bool isStream) {
     audio->file = modFile;
 
     // load audio
+    // On failure the entry has to go too. Left in the pool, the next load would find it
+    // and hand back a sample that was never loaded
     FILE *f = f_open_r(modFile->cachedPath);
     if (!f) {
-        LOG_ERROR("failed to load audio file '%s': file not found", filename);
+        LOG_CONSOLE("failed to load audio file '%s': file not found", filename);
+        dynamic_pool_free(sModAudioPool, audio);
         return NULL;
     }
 
@@ -271,7 +299,8 @@ struct ModAudio* audio_load_internal(const char* filename, bool isStream) {
     if (!buffer) {
         f_close(f);
         f_delete(f);
-        LOG_ERROR("failed to load audio file '%s': cannot allocate buffer of size: %d", filename, size);
+        LOG_CONSOLE("failed to load audio file '%s': cannot allocate buffer of size: %d", filename, size);
+        dynamic_pool_free(sModAudioPool, audio);
         return NULL;
     }
 
@@ -280,16 +309,18 @@ struct ModAudio* audio_load_internal(const char* filename, bool isStream) {
         free(buffer);
         f_close(f);
         f_delete(f);
-        LOG_ERROR("failed to load audio file '%s': cannot read audio buffer of size: %d", filename, size);
+        LOG_CONSOLE("failed to load audio file '%s': cannot read audio buffer of size: %d", filename, size);
+        dynamic_pool_free(sModAudioPool, audio);
         return NULL;
     }
     f_close(f);
     f_delete(f);
-    
+
     ma_result result = ma_sound_from_buffer(&sModAudioEngine, &audio->sound, &audio->decoder, buffer, size, isStream);
     if (result != MA_SUCCESS) {
         free(buffer);
-        LOG_ERROR("Failed to load audio file '%s': Failed to decode raw audio: %d", filename, result);
+        LOG_CONSOLE("Failed to load audio file '%s': Failed to decode raw audio: %d", filename, result);
+        dynamic_pool_free(sModAudioPool, audio);
         return NULL;
     }
 
@@ -595,7 +626,10 @@ void smlua_audio_custom_deinit(void) {
     if (sModAudioPool) {
         audio_custom_shutdown();
         free(sModAudioPool);
-        ma_uninitalize(&sModAudioEngine);
+        if (sModAudioEngineReady) {
+            sModAudioEngineReady = false;
+            ma_uninitalize(&sModAudioEngine);
+        }
         sModAudioPool = NULL;
     }
 }

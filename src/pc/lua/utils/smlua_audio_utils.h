@@ -73,6 +73,7 @@ void audio_sample_stop(struct ModAudio* audio);
 void audio_sample_play(struct ModAudio* audio, Vec3f position, f32 volume);
 
 void audio_custom_update_volume(void);
+void audio_custom_mix(s16 *samples, u32 numFrames);
 void audio_custom_shutdown(void);
 void smlua_audio_custom_deinit(void);
 
