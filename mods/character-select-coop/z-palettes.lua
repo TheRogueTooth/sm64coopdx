@@ -85,9 +85,9 @@ end
 
 --- @param np NetworkPlayer
 local function update_preset_palette(np)
-    local p = gCSPlayers[np.localIndex]
+    local p = gCSPlayersRaw[np.localIndex]
     local modelId = p.modelId
-    if np.connected and gCSPlayers[0].presetPalette > 0 and characterColorPresets[modelId] and not stopPalettes then
+    if np.connected and p.presetPalette > 0 and characterColorPresets[modelId] and not stopPalettes then
         network_player_set_full_override_palette(np, characterColorPresets[modelId][p.presetPalette])
     end
 end
@@ -101,18 +101,20 @@ local prevPresetPalette = {}
 local prevModel = {}
 
 local function mario_update(m)
-    local np = gNetworkPlayers[m.playerIndex]
-    local p = gCSPlayers[m.playerIndex]
+    -- Palette state is per real player, m.playerIndex reads 0 for every local player
+    local playerIndex = m.playerIndex == 0 and cs_context_index() or m.playerIndex
+    local np = gNetworkPlayers[playerIndex]
+    local p = gCSPlayersRaw[playerIndex]
     local currAlt = characterTable[currChar].currAlt
-    
+
     if m.playerIndex == 0 and not p.isUpdating then
         p.isUpdating = true
         for i = 1, MAX_PLAYERS - 1 do
-            prevPresetPalette[i] = gCSPlayers[i].presetPalette
-            prevModel[i] = gCSPlayers[i].modelId
+            prevPresetPalette[i] = gCSPlayersRaw[i].presetPalette
+            prevModel[i] = gCSPlayersRaw[i].modelId
         end
     end
-    
+
     if m.playerIndex == 0 then
         if not stopPalettes then
             gCSPlayers[0].presetPalette = characterColorPresets[gCSPlayers[0].modelId] ~= nil and characterColorPresets[gCSPlayers[0].modelId].currPalette or 0
@@ -126,19 +128,19 @@ local function mario_update(m)
     if np.connected then
         if p.presetPalette == nil or characterColorPresets[p.modelId] == nil then
             if p.presetPalette == nil then
-                prevPresetPalette[m.playerIndex] = 0
+                prevPresetPalette[playerIndex] = 0
             end
             p.presetPalette = 0
         end
 
-        if (prevPresetPalette[m.playerIndex] ~= p.presetPalette or prevModel[m.playerIndex] ~= p.modelId) then
+        if (prevPresetPalette[playerIndex] ~= p.presetPalette or prevModel[playerIndex] ~= p.modelId) then
             if p.presetPalette == 0 or not characterColorPresets[p.modelId] then
                 network_player_reset_override_palette(np)
             end
         end
 
-        prevPresetPalette[m.playerIndex] = p.presetPalette
-        prevModel[m.playerIndex] = p.modelId
+        prevPresetPalette[playerIndex] = p.presetPalette
+        prevModel[playerIndex] = p.modelId
 
         if p.presetPalette > 0 and characterColorPresets[p.modelId] and not stopPalettes then
             network_player_set_full_override_palette(np, characterColorPresets[p.modelId][p.presetPalette])

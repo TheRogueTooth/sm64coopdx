@@ -21,6 +21,7 @@
 #include "game/hardcoded.h"
 #include "gfx_symbols.h"
 #include "include/macros.h"
+#include "game/local_multiplayer.h"
 
 bool smlua_functions_valid_param_count(lua_State* L, int expected) {
     int top = lua_gettop(L);
@@ -1054,12 +1055,34 @@ int smlua_func_play_sound_with_freq_scale(lua_State* L) {
     return 1;
 }
 
+  ///////////
+ // couch //
+///////////
+
+// Local players see themselves as playerIndex 0 inside their own hooks, these
+// let a mod tell them apart
+int smlua_func_get_num_local_players(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 0)) { return 0; }
+    lua_pushinteger(L, gNumPlayersLocal);
+    return 1;
+}
+
+int smlua_func_get_real_local_player(lua_State* L) {
+    if (!smlua_functions_valid_param_count(L, 0)) { return 0; }
+    lua_pushinteger(L, realPlayerIndex);
+    return 1;
+}
+
   //////////
  // bind //
 //////////
 
 void smlua_bind_functions(void) {
     lua_State* L = gLuaState;
+
+    // couch
+    smlua_bind_function(L, "get_num_local_players", smlua_func_get_num_local_players);
+    smlua_bind_function(L, "get_real_local_player", smlua_func_get_real_local_player);
 
     // misc
     smlua_bind_function(L, "table_copy", smlua_func_table_copy);

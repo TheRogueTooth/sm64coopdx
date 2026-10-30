@@ -8,14 +8,33 @@
 #include "../../game/level_update.h"
 
 #include "controller_switch.h"
+#include "controller_system.h"
+#include "game/local_multiplayer_const.h"
 #include "pc/djui/djui.h"
 #include "pc/djui/djui_base.h"
 #include "pc/djui/djui_interactable.h"
 #include "pc/djui/djui_panel_pause.h"
 
+// How many frames a change in connected pads has to last before players are
+// added or removed, so a controller waking up doesn't reshuffle the screen
+#define PAD_CHANGE_FRAMES 30
+
+// Each Npad slot gets its own PadState so players can be handed out in the order
+// their controllers appear, attached Joy-Cons first. Handheld is a separate slot
+// from Player 1, a Pro Controller paired while handheld shows up as No1
+static const HidNpadIdType sNpadIds[] = {
+    HidNpadIdType_Handheld, HidNpadIdType_No1, HidNpadIdType_No2, HidNpadIdType_No3, HidNpadIdType_No4
+};
+#define NUM_NPADS (sizeof(sNpadIds) / sizeof(sNpadIds[0]))
+static PadState sPads[NUM_NPADS] = { 0 };
+static u8 sPlayerPads[POSSIBLE_NUM_PLAYERS] = { 0 };
+static u8 sConnectedPads = 1;
+static u8 sPadChangeFrames = 0;
+static bool sReadingMainPlayer = true;
+
 // Buttons & Sticks
 static HidAnalogStickState stickStates[2] = { 0 };
-static PadState padState = { 0 };
+static PadState *padState = &sPads[0];
 static u64 padBtnsPressed = 0;
 static u64 padBtnsDown = 0;
 static u64 padBtnsUp = 0;
@@ -122,6 +141,9 @@ static s32 gyro_to_stick(float f) {
 }
 
 static void update_button_djui(u8 flag, u64 hid) {
+    // Menus only ever listen to player 1
+    if (!sReadingMainPlayer) { return; }
+
     bool down = padBtnsDown & hid;
     bool up = padBtnsUp & hid;
     bool held = (padBtnsPressed & hid) && (!down && !up);
@@ -180,17 +202,17 @@ static void update_sticks(OSContPad *pad) {
     s32 rightX = stickStates[1].x / 409;
     s32 rightY = stickStates[1].y / 409;
     
-    if (isSixAxis && abs(leftX) < 20 && abs(leftY) < 20) {
+    if (isSixAxis && sReadingMainPlayer && abs(leftX) < 20 && abs(leftY) < 20) {
         HidSixAxisSensorState sixAxis;
 
-        u64 style_set = padGetStyleSet(&padState);
+        u64 style_set = padGetStyleSet(padState);
         if (style_set & HidNpadStyleTag_NpadHandheld) {
             hidGetSixAxisSensorStates(sixAxisHandles[0], &sixAxis, 1);
         } else if (style_set & HidNpadStyleTag_NpadFullKey) {
             hidGetSixAxisSensorStates(sixAxisHandles[1], &sixAxis, 1);
         } else if (style_set & HidNpadStyleTag_NpadJoyDual) {
             // For JoyDual, read from either the Left or Right Joy-Con depending on which is/are connected
-            u64 attrib = padGetAttributes(&padState);
+            u64 attrib = padGetAttributes(padState);
             if (attrib & HidNpadAttribute_IsRightConnected) {
                 hidGetSixAxisSensorStates(sixAxisHandles[3], &sixAxis, 1);
             } else if (attrib & HidNpadAttribute_IsLeftConnected) {
@@ -208,9 +230,34 @@ static void update_sticks(OSContPad *pad) {
     pad->ext_stick_y = rightY;
 }
 
+static void refresh_pads(void) {
+    u8 connected = 0;
+    for (u8 i = 0; i < NUM_NPADS; i++) {
+        padUpdate(&sPads[i]);
+        if (padIsConnected(&sPads[i]) && connected < POSSIBLE_NUM_PLAYERS) {
+            sPlayerPads[connected++] = i;
+        }
+    }
+
+    if (connected == sConnectedPads) {
+        sPadChangeFrames = 0;
+    } else if (++sPadChangeFrames >= PAD_CHANGE_FRAMES) {
+        sPadChangeFrames = 0;
+        sConnectedPads = connected;
+        controller_update_controller_count();
+    }
+}
+
+int controller_switch_connected_pad_count(void) {
+    return sConnectedPads;
+}
+
 static void controller_switch_nx_init(void) {
-    padConfigureInput(1, HidNpadStyleSet_NpadFullCtrl);
-    padInitializeDefault(&padState);
+    padConfigureInput(POSSIBLE_NUM_PLAYERS, HidNpadStyleSet_NpadFullCtrl);
+    for (u8 i = 0; i < NUM_NPADS; i++) {
+        padInitialize(&sPads[i], sNpadIds[i]);
+    }
+    padState = &sPads[1];
 
     hidInitializeVibrationDevices(VibrationDeviceHandles[0], 2, HidNpadIdType_Handheld, HidNpadStyleTag_NpadHandheld);
     hidInitializeVibrationDevices(VibrationDeviceHandles[1], 2, HidNpadIdType_No1, HidNpadStyleTag_NpadJoyDual);
@@ -233,17 +280,26 @@ static void controller_switch_nx_read(OSContPad *pad) {
             if (isSixAxis) stop_six_axis();
     }
     
-    padUpdate(&padState);
-    
-    padBtnsPressed = padGetButtons(&padState);
-    padBtnsDown = padGetButtonsDown(&padState);
-    padBtnsUp = padGetButtonsUp(&padState);
-    stickStates[0] = padGetStickPos(&padState, 0);
-    stickStates[1] = padGetStickPos(&padState, 1);
-    
+    // Player 1 is always read first each frame, so every pad updates exactly once
+    u8 player = gReadingController ? gReadingController->index : 0;
+    sReadingMainPlayer = (player == 0);
+    if (sReadingMainPlayer) {
+        refresh_pads();
+        poll_swkb();
+    }
+
+    // This player's controller went away, leave their inputs empty
+    if (player >= sConnectedPads) { return; }
+
+    padState = &sPads[sPlayerPads[player]];
+    padBtnsPressed = padGetButtons(padState);
+    padBtnsDown = padGetButtonsDown(padState);
+    padBtnsUp = padGetButtonsUp(padState);
+    stickStates[0] = padGetStickPos(padState, 0);
+    stickStates[1] = padGetStickPos(padState, 1);
+
     update_buttons(pad);
     update_sticks(pad);
-    poll_swkb();
 }
 
 static u32 controller_switch_nx_rawkey(void)  {
@@ -260,8 +316,7 @@ static void controller_switch_nx_rumble_play(f32 strength, UNUSED f32 length) {
     memcpy(&VibrationValues[0], &VibrationValue, sizeof(HidVibrationValue));
     memcpy(&VibrationValues[1], &VibrationValue, sizeof(HidVibrationValue));
 
-    padUpdate(&padState);
-    u32 target_device = padIsHandheld(&padState) ? 0 : 1;
+    u32 target_device = padIsConnected(&sPads[0]) ? 0 : 1;
     hidSendVibrationValues(VibrationDeviceHandles[target_device], VibrationValues, 2);
 }
 

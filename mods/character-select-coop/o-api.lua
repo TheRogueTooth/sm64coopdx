@@ -267,7 +267,7 @@ end
 ---@added 1.13
 ---@param modelInfo ModelExtendedId|integer|nil Model Information Received from smlua_model_util_get_id
 local function character_get_caps(modelInfo)
-    if modelInfo == nil then modelInfo = characterTable[currChar][characterTable[currChar].currAlt].model end
+    if modelInfo == nil then modelInfo = characterTable[cs_current_char()][cs_current_alt()].model end
     return characterCaps[modelInfo]
 end
 
@@ -416,7 +416,7 @@ end
 ---@param charAlt integer|nil
 ---@return CharacterTable
 local function character_get_current_table(tablePos, charAlt)
-    tablePos = tablePos and tablePos or currChar
+    tablePos = tablePos and tablePos or cs_current_char()
     charAlt = charAlt and charAlt or 1
     return characterTable[tablePos][charAlt]
 end
@@ -434,7 +434,7 @@ end
 --- @return integer|nil
 local function character_get_current_number(localIndex)
     if localIndex == nil or localIndex == 0 then
-        return currChar
+        return cs_current_char()
     else
         for i = 1, #characterTable do
             if characterTable[i].saveName == gCSPlayers[localIndex].saveName then
@@ -451,7 +451,7 @@ end
 ---@return integer|nil
 local function character_get_current_costume(localIndex)
     if localIndex == nil or localIndex == 0 then
-        return characterTable[currChar].currAlt
+        return cs_current_alt()
     else
         for i = 1, #characterTable do
             if characterTable[i].saveName == gCSPlayers[localIndex].saveName then
@@ -475,7 +475,7 @@ end
 ---@added 1.12
 --- @return table|nil
 local function character_get_current_palette()
-    local model = characterTable[currChar][characterTable[currChar].currAlt].model
+    local model = characterTable[cs_current_char()][cs_current_alt()].model
     return characterColorPresets[model][gCSPlayers[0].presetPalette]
 end
 
@@ -953,6 +953,11 @@ _G.charSelect = {
     credit_add = credit_add,
     restrict_palettes = restrict_palettes,
     restrict_movesets = restrict_movesets,
+
+    -- Added after this version, packs built for them call these unconditionally --
+    are_movesets_restricted = function() return stopMovesets == true end,
+    character_add_graffiti = placeholder,
+    character_add_menu_instrumental = placeholder,
 
     -- Misc --
     dialog_set_replace_name = dialog_set_replace_name, -- Function located in dialog.lua

@@ -461,7 +461,9 @@ local pieTextureNames = {
 }
 
 local function render_hud_health()
-    if currChar == 1 and characterTable[1].currAlt == 1 then
+    local charNum = cs_current_char()
+    local charAlt = cs_current_alt()
+    if charNum == 1 and charAlt == 1 then
         texture_override_reset("texture_power_meter_left_side")
         texture_override_reset("texture_power_meter_right_side")
 		for i = 1, 8 do
@@ -469,7 +471,7 @@ local function render_hud_health()
 		end
         return
     end
-	local textureTable = characterTable[currChar][characterTable[currChar].currAlt].healthTexture
+	local textureTable = characterTable[charNum][charAlt].healthTexture
 	if textureTable then -- sets health HUD to custom textures
 		if textureTable.label.left and textureTable.label.right then -- if left and right label textures exist. BOTH have to exist to be set!
 			texture_override_set("texture_power_meter_left_side", textureTable.label.left)
@@ -488,12 +490,13 @@ local function render_hud_health()
 end
 
 local function render_hud_act_select_course()
-    if currChar == 1 then
+    local charNum = cs_current_char()
+    if charNum == 1 then
         texture_override_reset("texture_menu_course_upper")
         texture_override_reset("texture_menu_course_lower")
         return
     end
-	local textureTable = characterTable[currChar][characterTable[currChar].currAlt].courseTexture
+	local textureTable = characterTable[charNum][cs_current_alt()].courseTexture
 	if textureTable then -- sets health HUD to custom textures
 		if textureTable.top and textureTable.bottom then -- if left and right label textures exist. BOTH have to exist to be set!
 			texture_override_set("texture_menu_course_upper", textureTable.top)
@@ -751,7 +754,7 @@ local function render_hud_ending_dialog()
 
     local width = djui_hud_get_screen_width()
 
-    local charName = characterTable[currChar][characterTable[currChar].currAlt].name
+    local charName = characterTable[cs_current_char()][cs_current_alt()].name
     local string = ""
     local startTime = 0
     local endTime = 0

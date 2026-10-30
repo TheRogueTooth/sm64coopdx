@@ -1,9 +1,11 @@
+#include <stdlib.h>
 #include <string.h>
 #include <SDL2/SDL.h>
 #include "include/PR/ultratypes.h"
 
 #include "controller_system.h"
 #include "controller_api.h"
+#include "controller_switch.h"
 #include "game/local_multiplayer.h"
 #include "pc/djui/djui_panel_splitscreen.h"
 #include "engine/math_util.h"
@@ -71,7 +73,16 @@ void controller_update_gamepad_choices() {
 
 void controller_update_controller_count() {
     static u16 prevNumPlayers = 1;
+#ifdef CAPI_SWITCH
+    // No keyboard here and SDL doesn't own the pads, ask the Switch backend instead
+    gNumPlayersLocal = clamp(controller_switch_connected_pad_count(), 1, SWITCH_MAX_LOCAL_PLAYERS);
+    for (u16 i = 0; i < gNumPlayersLocal; i++) { gPlayerControllerInfos[i].type = 0; }
+#else
     gNumPlayersLocal = clamp(SDL_NumJoysticks() + 1, 1, POSSIBLE_NUM_PLAYERS);
+    // Lets a PC test build run split screen without a second controller attached
+    const char *forcedPlayers = getenv("COUCH_FORCE_LOCAL_PLAYERS");
+    if (forcedPlayers) { gNumPlayersLocal = clamp(atoi(forcedPlayers), 1, POSSIBLE_NUM_PLAYERS); }
+#endif
     for (u16 i = 0, index = 0; i < gNumPlayersLocal; i++) {
         struct ControllerInfo *c = &gPlayerControllerInfos[i];
         if (gNumPlayersLocal == 1 && c->type == 1 && i != 0) {
@@ -90,8 +101,9 @@ void controller_update_controller_count() {
         snprintf(name, 10, "Player-%d", gNumPlayersLocal);
         network_player_connected(NPT_LOCAL, gNumPlayersLocal - 1, 0, &DEFAULT_MARIO_PALETTE, name, "0");
     } else if (gNumPlayersLocal < prevNumPlayers) {
-        u8 index = gNetworkPlayers[prevNumPlayers].globalIndex;
-        if (index == 0) { index = prevNumPlayers; }
+        // The last local player, one below the old count
+        u8 index = gNetworkPlayers[prevNumPlayers - 1].globalIndex;
+        if (index == 0) { index = prevNumPlayers - 1; }
         network_player_disconnected(index);
     }
     gSuppressConnectedPopup = true;

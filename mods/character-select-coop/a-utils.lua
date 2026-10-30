@@ -214,9 +214,10 @@ if get_date_and_time().month == 11 then
 end
 
 -- Dedicated Networking Table for Character Select
-gCSPlayers = {}
+-- Raw records are indexed by real local player index
+gCSPlayersRaw = {}
 for i = 0, MAX_PLAYERS - 1 do
-    gCSPlayers[i] = {
+    gCSPlayersRaw[i] = {
         index = network_global_index_from_local(i),
         saveName = "Default",
         currAlt = 1,
@@ -229,6 +230,84 @@ for i = 0, MAX_PLAYERS - 1 do
         modelEditOffset = 0,
         inMenu = false,
     }
+end
+
+-----------------
+-- Couch Co-op --
+-----------------
+
+-- The engine swaps a local player into slot 0 while running their hooks and reports
+-- every local player's m.playerIndex as 0. Mirror that here, so that everything
+-- reading gCSPlayers[0] or gCSPlayers[m.playerIndex] gets the player being processed
+
+local get_num_local_players, get_real_local_player = get_num_local_players, get_real_local_player
+
+---@return boolean
+function cs_couch_active()
+    return get_num_local_players ~= nil and get_num_local_players() > 1
+end
+
+---@return integer
+function cs_context_index()
+    return get_real_local_player ~= nil and get_real_local_player() or 0
+end
+
+gCSPlayers = setmetatable({}, {
+    __index = function(_, i)
+        if i == 0 then return gCSPlayersRaw[cs_context_index()] end
+        return gCSPlayersRaw[i]
+    end,
+    __newindex = function(_, i, value)
+        if i == 0 then i = cs_context_index() end
+        gCSPlayersRaw[i] = value
+    end,
+})
+
+-- What each local player picked, char is a position in characterTable
+-- Starts as Mario, Luigi, Toad, Waluigi. These are Default's costumes
+gCSCouchSeats = {}
+for i = 0, 3 do
+    gCSCouchSeats[i] = { char = 1, alt = i + 1 }
+end
+
+---@return table|nil
+function cs_couch_seat()
+    if not cs_couch_active() then return nil end
+    return gCSCouchSeats[cs_context_index()]
+end
+
+---@return integer
+function cs_current_char()
+    local seat = cs_couch_seat()
+    return seat and seat.char or currChar
+end
+
+---@return integer
+function cs_current_alt()
+    local seat = cs_couch_seat()
+    return seat and seat.alt or characterTable[currChar].currAlt
+end
+
+---@param index integer Real local player index
+---@return MarioState
+function cs_state_of_local_player(index)
+    local context = cs_context_index()
+    if index == context then return gMarioStates[0] end
+    if index == 0 then return gMarioStates[context] end
+    return gMarioStates[index]
+end
+
+-- Extra Characters Plus was written against a newer engine than this one
+if _G.find_floor == nil then
+    _G.find_floor = function(x, y, z)
+        return find_floor_height(x, y, z), collision_find_floor(x, y, z)
+    end
+end
+if _G.vec3f_mario_ceil == nil then
+    _G.vec3f_mario_ceil = function(pos, height)
+        local ceil = collision_find_ceil(pos.x, height + 80, pos.z)
+        return find_ceil_height(pos.x, height + 80, pos.z), ceil
+    end
 end
 
 local stallPacket = 0

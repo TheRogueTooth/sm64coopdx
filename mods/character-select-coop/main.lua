@@ -558,6 +558,7 @@ local function menu_is_allowed(m)
 
     return true
 end
+cs_menu_is_allowed = menu_is_allowed
 
 --[[
 local function get_next_unlocked_char()
@@ -604,8 +605,10 @@ local prevFOV = 40
 local menuFOV = 45
 --- @param m MarioState
 local function mario_update(m)
-    local np = gNetworkPlayers[m.playerIndex]
+    -- gNetworkPlayers isn't swapped like gMarioStates, so index it by the real player
+    local np = gNetworkPlayers[m.playerIndex == 0 and cs_context_index() or m.playerIndex]
     local p = gCSPlayers[m.playerIndex]
+    local seat = cs_couch_seat()
     if stallFrame == 1 or queueStorageFailsafe then
         failsafe_options()
         if not queueStorageFailsafe then
@@ -622,7 +625,7 @@ local function mario_update(m)
     end
 
     if m.playerIndex == 0 and stallFrame > 1 then
-        if djui_hud_is_pause_menu_created() and prevBaseCharFrame ~= np.modelIndex then
+        if not seat and djui_hud_is_pause_menu_created() and prevBaseCharFrame ~= np.modelIndex then
             characterTable[1].currAlt = np.modelIndex + 1
             currChar = 1
             p.presetPalette = 0
@@ -635,15 +638,16 @@ local function mario_update(m)
             currCharRender = 1
         end
 
-        local charTable = characterTable[currChar]
+        local charTable = characterTable[seat and seat.char or currChar]
+        local charAlt = seat and seat.alt or charTable.currAlt
         p.saveName = charTable.saveName
-        p.currAlt = charTable.currAlt
-    
-        p.modelId = charTable[charTable.currAlt].model
-        if charTable[charTable.currAlt].forceChar ~= nil then
-            p.forceChar = charTable[charTable.currAlt].forceChar
+        p.currAlt = charAlt
+
+        p.modelId = charTable[charAlt].model
+        if charTable[charAlt].forceChar ~= nil then
+            p.forceChar = charTable[charAlt].forceChar
         end
-        p.modelEditOffset = charTable[charTable.currAlt].model - charTable[charTable.currAlt].ogModel
+        p.modelEditOffset = charTable[charAlt].model - charTable[charAlt].ogModel
         m.marioObj.hookRender = 1
 
         if menuAndTransition then
@@ -746,6 +750,7 @@ local function mario_update(m)
     -- Character Animations
     if characterAnims[p.modelId] then
         local animID = characterAnims[p.modelId][m.marioObj.header.gfx.animInfo.animID]
+        if type(animID) == TYPE_FUNCTION then animID = animID(m) end
         if animID then
             smlua_anim_util_set_animation(m.marioObj, animID)
         end
@@ -778,11 +783,12 @@ function set_model(o, model)
     if obj_has_behavior_id(o, id_bhvMario) ~= 0 then
         local i = network_local_index_from_global(o.globalPlayerIndex)
         local prevModelData = obj_get_model_id_extended(o)
+        local p = gCSPlayersRaw[i]
         local localModelData = nil
         for c = 1, #characterTable do
-            if gCSPlayers[i].saveName == characterTable[c].saveName then
-                if gCSPlayers[i].currAlt <= #characterTable[c] then
-                    localModelData = characterTable[c][gCSPlayers[i].currAlt].ogModel + gCSPlayers[i].modelEditOffset
+            if p.saveName == characterTable[c].saveName then
+                if p.currAlt <= #characterTable[c] then
+                    localModelData = characterTable[c][p.currAlt].ogModel + p.modelEditOffset
                 end
             end
         end
@@ -792,8 +798,8 @@ function set_model(o, model)
             end
         else
             -- Original/Backup
-            if gCSPlayers[i].modelId ~= nil and obj_has_model_extended(o, gCSPlayers[i].modelId) == 0 then
-                obj_set_model_extended(o, gCSPlayers[i].modelId)
+            if p.modelId ~= nil and obj_has_model_extended(o, p.modelId) == 0 then
+                obj_set_model_extended(o, p.modelId)
             end
         end
         return
@@ -802,8 +808,8 @@ function set_model(o, model)
     -- Star Models
     if obj_has_behavior_id(o, id_bhvCelebrationStar) ~= 0 and o.parentObj ~= nil then
         local i = network_local_index_from_global(o.parentObj.globalPlayerIndex)
-        local starModel = characterCelebrationStar[gCSPlayers[i].modelId]
-        if gCSPlayers[i].modelId ~= nil and starModel ~= nil and obj_has_model_extended(o, starModel) == 0 and not BowserKey then
+        local starModel = characterCelebrationStar[gCSPlayersRaw[i].modelId]
+        if gCSPlayersRaw[i].modelId ~= nil and starModel ~= nil and obj_has_model_extended(o, starModel) == 0 and not BowserKey then
             obj_set_model_extended(o, starModel)
         end
         return
@@ -814,12 +820,12 @@ function set_model(o, model)
     end
     local i = network_local_index_from_global(o.globalPlayerIndex)
 
-    local c = gMarioStates[i].character
+    local c = cs_state_of_local_player(i).character
     if model == c.capModelId or
        model == c.capWingModelId or
        model == c.capMetalModelId or
        model == c.capMetalWingModelId then
-        local capModels = characterCaps[gCSPlayers[i].modelId]
+        local capModels = characterCaps[gCSPlayersRaw[i].modelId]
         if capModels ~= nil then
             local capModel = E_MODEL_NONE
             if model == c.capModelId then
@@ -1601,6 +1607,11 @@ local prevMouseScroll = 0
 local mouseScroll = 0
 local function before_mario_update(m)
     if m.playerIndex ~= 0 then return end
+    -- This menu has one selection and takes the whole screen, z-couch.lua takes over
+    if cs_couch_active() then
+        menu = false
+        return
+    end
     local controller = m.controller
     if inputStallTimerButton > 0 then inputStallTimerButton = inputStallTimerButton - 1 end
     if inputStallTimerDirectional > 0 then inputStallTimerDirectional = inputStallTimerDirectional - 1 end

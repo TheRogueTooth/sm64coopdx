@@ -16,10 +16,14 @@ static struct DjuiSplitScreenWindow *sDjuiSplitScreenWindows[POSSIBLE_NUM_PLAYER
 static void djui_panel_splitscreen_window_update_controller_text(struct DjuiSplitScreenWindow *window, u16 index) {
     struct ControllerInfo *cntr = &gPlayerControllerInfos[index];
     const char *name = "Main Keyboard";
+#ifdef CAPI_SWITCH
+    name = (index < gNumPlayersLocal) ? "Switch Controller" : "Disconnected";
+#else
     if (cntr->type != 1) {
         name = SDL_JoystickNameForIndex(cntr->index);
         name = (name) ? name : "Disconnected";
     }
+#endif
     djui_text_set_text(window->ctrText, name);
 
     cntr->connected = (cntr->type == 1 || name != NULL);
