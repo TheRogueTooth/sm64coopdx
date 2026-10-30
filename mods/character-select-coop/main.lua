@@ -597,6 +597,8 @@ local TYPE_TABLE = "table"
 local MATH_PI = math.pi
 
 local prevBaseCharFrame = gNetworkPlayers[0].modelIndex
+local prevCharNums = {}
+characterChangeHooks = {}
 local prevAnim = 0
 local animTimer = 0
 local faceAngle = 0
@@ -649,6 +651,16 @@ local function mario_update(m)
         end
         p.modelEditOffset = charTable[charAlt].model - charTable[charAlt].ogModel
         m.marioObj.hookRender = 1
+
+        -- Tell packs when this player's character changes
+        local charNum = seat and seat.char or currChar
+        local prevCharNum = prevCharNums[cs_context_index()]
+        if prevCharNum ~= charNum then
+            prevCharNums[cs_context_index()] = charNum
+            for _, func in ipairs(characterChangeHooks) do
+                func(prevCharNum, charNum)
+            end
+        end
 
         if menuAndTransition then
             --play_secondary_music(0, 0, 0.5, 0)

@@ -7,7 +7,7 @@ if incompatibleClient then return 0 end
 -- half of the screen instead. Picks live in gCSCouchSeats (a-utils.lua)
 
 -- Listed first, in this order. Everyone else follows in the order they were loaded
-local PICKER_ORDER = { "Mario", "Luigi", "Peach", "Rosalina", "Mallow", "Geno", "Toad", "Toadette", "Daisy", "Yoshi", "Birdo", "Pauline", "Foreman Spike", "Wario", "Waluigi", "Donkey Kong", "Luma", "Honey Queen", "Bowser", "Bowser Jr", "Larry Koopa", "Morton Koopa Jr", "Wendy O' Koopa", "Iggy Koopa", "Roy Koopa", "Lemmy Koopa", "Ludwig von Koopa", "Goomba", "Penguin", "Conkdor", "Jinjo" }
+local PICKER_ORDER = { "Mario", "Luigi", "Peach", "Rosalina", "Mallow", "Geno", "Toad", "Toadette", "Daisy", "Yoshi", "Birdo", "Pauline", "Spike", "Wario", "Waluigi", "Donkey Kong", "Luma", "Honey Queen", "Bowser", "Bowser Jr", "Larry Koopa", "Morton Koopa Jr", "Wendy O' Koopa", "Iggy Koopa", "Roy Koopa", "Lemmy Koopa", "Ludwig von Koopa", "Goomba", "Penguin", "Conkdor", "Jinjo" }
 -- Not shown in the picker. Remove a name to make them selectable
 local PICKER_HIDDEN = { ["Sonic"] = true, ["WaPeach"] = true }
 
@@ -175,7 +175,7 @@ local function test_update(m)
         set_mario_action(m, ACT_JUMP, 0)
     elseif sTest.timer == TEST_PUNCH_FRAME and (m.action & ACT_FLAG_AIR) == 0 then
         set_mario_action(m, ACT_PUNCHING, 0)
-    elseif sTest.timer >= TEST_FRAMES_PER_COSTUME then
+    elseif sTest.timer >= (gCSCouchTestFrames or TEST_FRAMES_PER_COSTUME) then
         sTest.timer = 0
     end
 end
@@ -266,6 +266,13 @@ local function on_before_mario_update(m)
     controller.stickX = 0
     controller.stickY = 0
     controller.stickMag = 0
+end
+
+-- Lets a test run show the picker without a controller
+function gCSCouchSetPickerOpen(index, open)
+    if open and sRosterSize ~= #characterTable then build_roster() end
+    sPickers[index].open = open
+    sPickers[index].cursor = find_cursor(gCSCouchSeats[index])
 end
 
 local function print_shadowed(text, x, y, scale, r, g, b)

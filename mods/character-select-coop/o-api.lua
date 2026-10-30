@@ -960,6 +960,7 @@ _G.charSelect = {
     are_movesets_restricted = function() return stopMovesets == true end,
     character_add_graffiti = placeholder,
     character_add_menu_instrumental = placeholder,
+    hook_on_character_change = function(func) table_insert(characterChangeHooks, func) end,
 
     -- Misc --
     dialog_set_replace_name = dialog_set_replace_name, -- Function located in dialog.lua
