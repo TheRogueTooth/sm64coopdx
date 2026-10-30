@@ -7,7 +7,7 @@ if incompatibleClient then return 0 end
 -- half of the screen instead. Picks live in gCSCouchSeats (a-utils.lua)
 
 -- Listed first, in this order. Everyone else follows in the order they were loaded
-local PICKER_ORDER = { "Mario", "Luigi", "Peach", "Rosalina", "Mallow", "Geno", "Toad", "Toadette", "Daisy", "Yoshi", "Birdo", "Pauline", "Spike", "Wario", "Waluigi", "Donkey Kong", "Luma", "Honey Queen", "Bowser", "Bowser Jr", "Larry Koopa", "Morton Koopa Jr", "Wendy O' Koopa", "Iggy Koopa", "Roy Koopa", "Lemmy Koopa", "Ludwig von Koopa", "Goomba", "Penguin", "Conkdor", "Jinjo" }
+local PICKER_ORDER = { "Mario", "Luigi", "Peach", "Rosalina", "Mallow", "Geno", "Toad", "Toadette", "Daisy", "Yoshi", "Birdo", "Pauline", "Spike", "Wario", "Waluigi", "Donkey Kong", "Luma", "Goombella", "Koops", "Flurrie", "Baby Yoshi (Green)", "Vivian", "Admiral Bobbery", "Ms Mowz", "Honey Queen", "Bowser", "Bowser Jr", "Larry Koopa", "Morton Koopa Jr", "Wendy O' Koopa", "Iggy Koopa", "Roy Koopa", "Lemmy Koopa", "Ludwig von Koopa", "Goomba", "Penguin", "Conkdor", "Jinjo" }
 -- Not shown in the picker. Remove a name to make them selectable
 local PICKER_HIDDEN = { ["Sonic"] = true, ["WaPeach"] = true }
 
