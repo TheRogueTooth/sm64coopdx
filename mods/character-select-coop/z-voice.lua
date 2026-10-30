@@ -212,6 +212,14 @@ _G.charSelect.voice = {
     snore = custom_character_snore,
 }
 
+-- For characters whose only voice work was fan-made. Giving them this table keeps them
+-- quiet, where having no table at all would have them speak with Mario's voice
+local SILENT_VOICE = {}
+_G.charSelect.silent_voice = SILENT_VOICE
+hook_event(HOOK_CHARACTER_SOUND, function(m, sound)
+    if character_get_voice(m) == SILENT_VOICE then return NO_SOUND end
+end)
+
 -- Must be ran on startup
 local function config_character_sounds()
     hook_event(HOOK_CHARACTER_SOUND, custom_character_sound)

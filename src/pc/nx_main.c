@@ -78,7 +78,15 @@ static bool gNxInitialized = false;
 alignas(16) u8 __nx_exception_stack[0x8000];
 u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
 
-extern char __start__;
+static bool nx_address_is_readable(u64 address);
+
+// The code segment starts at the program's base address, so ask where this function's is
+static u64 nx_program_base(void) {
+    MemoryInfo info = { 0 };
+    u32 pageInfo = 0;
+    if (R_FAILED(svcQueryMemory(&info, &pageInfo, (u64)&nx_program_base))) { return 0; }
+    return info.addr;
+}
 
 static bool nx_address_is_readable(u64 address) {
     MemoryInfo info = { 0 };
@@ -92,8 +100,8 @@ void __libnx_exception_handler(ThreadExceptionDump *ctx) {
     FILE *f = fopen(CRASH_LOG_PATH, "w");
     if (!f) { return; }
 
-    u64 base = (u64)&__start__;
-    fprintf(f, "error_desc=0x%x far=0x%lx esr=0x%lx\n", ctx->error_desc, ctx->far.x, ctx->esr);
+    u64 base = nx_program_base();
+    fprintf(f, "base=0x%lx error_desc=0x%x far=0x%lx esr=0x%lx\n", base, ctx->error_desc, ctx->far.x, ctx->esr);
     fprintf(f, "pc +0x%lx\nlr +0x%lx\nsp 0x%lx\n", ctx->pc.x - base, ctx->lr.x - base, ctx->sp.x);
     for (int i = 0; i < 29; i++) {
         fprintf(f, "x%d 0x%lx\n", i, ctx->cpu_gprs[i].x);

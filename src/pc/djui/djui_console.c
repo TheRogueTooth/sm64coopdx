@@ -171,6 +171,14 @@ static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel
     static size_t sWritten = 0;
     if (sWritten > CONSOLE_LOG_MAX_SIZE) { return; }
 
+    // Keep the previous session's log, a crash is usually found out about after relaunching
+    if (!sStarted) {
+        char previous[SYS_MAX_PATH] = { 0 };
+        snprintf(previous, SYS_MAX_PATH, "%s", fs_get_write_path("couch-log-previous.txt"));
+        remove(previous);
+        rename(fs_get_write_path("couch-log.txt"), previous);
+    }
+
     FILE* f = fopen(fs_get_write_path("couch-log.txt"), sStarted ? "a" : "w");
     if (!f) { return; }
     sStarted = true;

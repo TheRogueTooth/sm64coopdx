@@ -298,6 +298,22 @@ function cs_state_of_local_player(index)
 end
 
 -- Extra Characters Plus was written against a newer engine than this one
+local function wrap_unsigned(x, bits)
+    return math.floor(x) & ((1 << bits) - 1)
+end
+local function wrap_signed(x, bits)
+    local value = wrap_unsigned(x, bits)
+    if value >= (1 << (bits - 1)) then value = value - (1 << bits) end
+    return value
+end
+if math.s16 == nil then
+    math.s8 = function(x) return wrap_signed(x, 8) end
+    math.s16 = function(x) return wrap_signed(x, 16) end
+    math.s32 = function(x) return wrap_signed(x, 32) end
+    math.u8 = function(x) return wrap_unsigned(x, 8) end
+    math.u16 = function(x) return wrap_unsigned(x, 16) end
+    math.u32 = function(x) return wrap_unsigned(x, 32) end
+end
 if _G.find_floor == nil then
     _G.find_floor = function(x, y, z)
         return find_floor_height(x, y, z), collision_find_floor(x, y, z)

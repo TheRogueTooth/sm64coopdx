@@ -9,6 +9,9 @@
 #include "djui_panel_confirm.h"
 #include "djui_panel_mod_menu.h"
 #include "pc/game_main.h"
+#include "pc/configfile.h"
+#include "pc/controller/controller_api.h"
+#include "pc/gfx/gfx_pc.h"
 #include "pc/network/network.h"
 #include "pc/lua/smlua_hooks.h"
 #include "game/object_helpers.h"
@@ -21,6 +24,15 @@ static void djui_panel_pause_resume(UNUSED struct DjuiBase* caller) {
 }
 
 void djui_panel_pause_quit_yes(UNUSED struct DjuiBase* caller) {
+#ifdef __SWITCH__
+    // Ending the session frees everything loaded for it, and that has crashed in free() on
+    // the Switch. Quitting goes back to the Homebrew Menu instead, which needs none of it
+    configfile_save(configfile_name());
+    controller_shutdown();
+    if (audio_api) { audio_api->shutdown(); }
+    gfx_shutdown();
+    exit(0);
+#endif
     network_reset_reconnect_and_rehost();
     network_shutdown(true, false, false, false);
 }
