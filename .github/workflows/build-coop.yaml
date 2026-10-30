@@ -6,6 +6,54 @@ on:
         branches: [ couch-coop ]
 
 jobs:
+    build-windows:
+        runs-on: windows-latest
+        defaults:
+            run:
+                shell: msys2 {0}
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install dependencies
+              uses: msys2/setup-msys2@v2
+              with:
+                msystem: mingw64
+                update: true
+                install: >
+                    unzip
+                    make
+                    git
+                    mingw-w64-x86_64-gcc
+                    mingw-w64-x86_64-glew
+                    mingw-w64-x86_64-SDL2
+                    mingw-w64-x86_64-SDL
+                    python3
+                    zip
+
+            - name: Build the game
+              run: |
+                make -j$(nproc) 2>&1 | tee build-windows.log
+                exit ${PIPESTATUS[0]}
+
+            - name: Zip the game
+              run: |
+                cd ./build/us_pc
+                zip -r sm64coopdx_Windows.zip dynos lang mods palettes coop.map discord_game_sdk.dll sm64coopdx.exe
+
+            - name: Upload log
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                name: build-windows-log
+                path: ./build-windows.log
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                name: sm64coopdx-windows
+                path: ./build/us_pc/sm64coopdx_Windows.zip
+
     build-switch:
         runs-on: ubuntu-latest
         container: devkitpro/devkita64:latest
