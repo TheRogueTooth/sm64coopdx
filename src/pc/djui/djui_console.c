@@ -152,6 +152,9 @@ static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel
 void djui_console_message_create(const char* message, enum ConsoleMessageLevel level) {
 #ifdef __SWITCH__
     djui_console_log_to_sd(message, level);
+    // A script erroring every frame fills this quickly, and freeing the oldest message has
+    // crashed here on the Switch. Nothing can read it on this platform, so just stop adding
+    if (sDjuiConsoleMessages >= MAX_CONSOLE_MESSAGES - 1) { return; }
 #endif
     if (sDjuiConsoleQueueMessages || !gDjuiConsole) {
         djui_console_message_queue(message, level);

@@ -119,8 +119,9 @@ local function mario_update(m)
         if not stopPalettes then
             local presets = characterColorPresets[gCSPlayers[0].modelId]
             local palette = presets ~= nil and presets.currPalette or 0
-            -- Palettes get turned on from the menu that couch co-op disables, so start them on
-            if palette == 0 and presets ~= nil and cs_couch_active() then palette = 1 end
+            -- Palettes get turned on from a menu that's off in couch co-op, so start them on.
+            -- Solo Mario stays off, he's the one wearing the colours from the Player menu
+            if palette == 0 and presets ~= nil and (cs_couch_active() or gCSPlayers[0].modelId ~= E_MODEL_MARIO) then palette = 1 end
             gCSPlayers[0].presetPalette = palette
         end
 
