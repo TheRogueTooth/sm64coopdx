@@ -132,7 +132,27 @@ static bool djui_console_on_key_down(UNUSED struct DjuiBase* base, int scancode)
     return true;
 }
 
+#ifdef __SWITCH__
+// There's no way to read the console on the Switch, so keep a copy on the SD card
+#define CONSOLE_LOG_PATH "sdmc:/switch/sm64coopdx/couch-log.txt"
+#define CONSOLE_LOG_MAX_SIZE (1024 * 1024)
+static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel level) {
+    static bool sStarted = false;
+    static size_t sWritten = 0;
+    if (sWritten > CONSOLE_LOG_MAX_SIZE) { return; }
+
+    FILE* f = fopen(CONSOLE_LOG_PATH, sStarted ? "a" : "w");
+    if (!f) { return; }
+    sStarted = true;
+    sWritten += fprintf(f, "[%d] %s\n", (int)level, message);
+    fclose(f);
+}
+#endif
+
 void djui_console_message_create(const char* message, enum ConsoleMessageLevel level) {
+#ifdef __SWITCH__
+    djui_console_log_to_sd(message, level);
+#endif
     if (sDjuiConsoleQueueMessages || !gDjuiConsole) {
         djui_console_message_queue(message, level);
         return;

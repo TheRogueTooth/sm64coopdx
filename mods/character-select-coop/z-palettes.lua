@@ -117,8 +117,12 @@ local function mario_update(m)
 
     if m.playerIndex == 0 then
         if not stopPalettes then
-            gCSPlayers[0].presetPalette = characterColorPresets[gCSPlayers[0].modelId] ~= nil and characterColorPresets[gCSPlayers[0].modelId].currPalette or 0
-        end 
+            local presets = characterColorPresets[gCSPlayers[0].modelId]
+            local palette = presets ~= nil and presets.currPalette or 0
+            -- Palettes get turned on from the menu that couch co-op disables, so start them on
+            if palette == 0 and presets ~= nil and cs_couch_active() then palette = 1 end
+            gCSPlayers[0].presetPalette = palette
+        end
 
         if stallTimer > 0 then
             stallTimer = stallTimer - 1

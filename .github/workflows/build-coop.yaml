@@ -28,4 +28,6 @@ jobs:
               uses: actions/upload-artifact@v4
               with:
                 name: sm64coopdx-switch
-                path: ./build/us_nx/sm64coopdx.nro
+                path: |
+                  ./build/us_nx/sm64coopdx.nro
+                  ./build/us_nx/sm64coopdx.elf

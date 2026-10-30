@@ -40,7 +40,9 @@ extern u8 gSmLuaSuppressErrors;
 extern struct Mod* gLuaLoadingMod;
 extern struct Mod* gLuaActiveMod;
 extern struct Mod* gLuaLastHookMod;
+extern struct ModFile* gLuaActiveModFile;
 
+int smlua_load_script(struct Mod* mod, struct ModFile* file, u16 remoteIndex, bool isModInit);
 void smlua_mod_error(void);
 void smlua_mod_warning(void);
 int smlua_error_handler(UNUSED lua_State* L);

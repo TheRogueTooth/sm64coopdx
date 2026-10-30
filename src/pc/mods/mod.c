@@ -1,3 +1,4 @@
+#include <sys/stat.h>
 #include "mod.h"
 #include "mods.h"
 #include "mods_utils.h"
@@ -262,7 +263,7 @@ static struct ModFile* mod_allocate_file(struct Mod* mod, char* relativePath) {
     return file;
 }
 
-static bool mod_load_files_dir(struct Mod* mod, char* fullPath, const char* subDir, const char** fileTypes) {
+static bool mod_load_files_dir(struct Mod* mod, char* fullPath, const char* subDir, const char** fileTypes, bool recursive) {
 
     // concat directory
     char dirPath[SYS_MAX_PATH] = { 0 };
@@ -293,6 +294,16 @@ static bool mod_load_files_dir(struct Mod* mod, char* fullPath, const char* subD
                 LOG_ERROR("Could not concat %s path!", subDir);
                 return false;
             }
+        }
+
+        // Check if this is a directory
+        struct stat st = { 0 };
+        if (recursive && stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+            if (!mod_load_files_dir(mod, fullPath, relativePath, fileTypes, recursive)) {
+                closedir(d);
+                return false;
+            }
+            continue;
         }
 
         // only consider certain file types
@@ -326,37 +337,37 @@ static bool mod_load_files(struct Mod* mod, char* modName, char* fullPath) {
     // deal with mod directory
     {
         const char* fileTypes[] = { ".lua", ".luac", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "", fileTypes, true)) { return false; }
     }
 
     // deal with actors directory
     {
         const char* fileTypes[] = { ".bin", ".col", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "actors", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "actors", fileTypes, false)) { return false; }
     }
 
     // deal with behaviors directory
     {
         const char* fileTypes[] = { ".bhv", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "data", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "data", fileTypes, false)) { return false; }
     }
 
     // deal with textures directory
     {
         const char* fileTypes[] = { ".tex", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "textures", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "textures", fileTypes, false)) { return false; }
     }
 
     // deal with levels directory
     {
         const char* fileTypes[] = { ".lvl", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "levels", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "levels", fileTypes, false)) { return false; }
     }
 
     // deal with sound directory
     {
         const char* fileTypes[] = { ".m64", ".mp3", ".aiff", ".ogg", NULL };
-        if (!mod_load_files_dir(mod, fullPath, "sound", fileTypes)) { return false; }
+        if (!mod_load_files_dir(mod, fullPath, "sound", fileTypes, false)) { return false; }
     }
 
     return true;
