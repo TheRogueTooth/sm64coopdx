@@ -84,6 +84,13 @@ void sys_fatal(const char *fmt, ...) {
     vsnprintf(msg, sizeof(msg), fmt, args);
     va_end(args);
     fflush(stdout); // push all crap out
+#ifdef __SWITCH__
+    FILE *f = fopen("sdmc:/switch/sm64coopdx/couch-crash.txt", "w");
+    if (f) {
+        fprintf(f, "fatal: %s\n", msg);
+        fclose(f);
+    }
+#endif
     sys_fatal_impl(msg);
 }
 

@@ -101,7 +101,81 @@ local function apply_cursor(picker, seat)
     seat.alt = entry.fixedAlt or 1
 end
 
+-- Character test: L + D-Pad Up steps player 1 through every character and costume,
+-- jumping and punching as each one, and writes each step to couch-log.txt. Anything that
+-- goes wrong shows up in the log straight after the character that caused it
+local TEST_FRAMES_PER_COSTUME = 120
+local TEST_JUMP_FRAME = 40
+local TEST_PUNCH_FRAME = 90
+local sTest = nil
+
+local function test_apply(step)
+    local seat = cs_couch_seat()
+    if seat then
+        seat.char, seat.alt = step.char, step.alt
+    else
+        currChar = step.char
+        characterTable[step.char].currAlt = step.alt
+    end
+end
+
+local function test_start()
+    local steps = {}
+    for c = 1, #characterTable do
+        for alt = 1, #characterTable[c] do
+            table.insert(steps, { char = c, alt = alt })
+        end
+    end
+    local seat = cs_couch_seat()
+    sTest = {
+        steps = steps,
+        index = 0,
+        timer = 0,
+        undo = {
+            char = seat and seat.char or currChar,
+            alt = seat and seat.alt or characterTable[currChar].currAlt,
+        },
+    }
+    log_to_console("[test] start: " .. #steps .. " costumes", 0)
+end
+
+local function test_update(m)
+    if sTest.timer == 0 then
+        sTest.index = sTest.index + 1
+        local step = sTest.steps[sTest.index]
+        if step == nil then
+            test_apply(sTest.undo)
+            log_to_console("[test] finished, no crash", 0)
+            djui_popup_create("Character test finished", 3)
+            sTest = nil
+            return
+        end
+        test_apply(step)
+        local character = characterTable[step.char]
+        log_to_console("[test] " .. sTest.index .. "/" .. #sTest.steps .. " " .. clean_name(character[1].name) .. " / " .. clean_name(character[step.alt].name), 0)
+        play_character_sound(m, CHAR_SOUND_HERE_WE_GO)
+    end
+
+    sTest.timer = sTest.timer + 1
+    if sTest.timer == TEST_JUMP_FRAME and (m.action & ACT_FLAG_AIR) == 0 then
+        set_mario_action(m, ACT_JUMP, 0)
+    elseif sTest.timer == TEST_PUNCH_FRAME and (m.action & ACT_FLAG_AIR) == 0 then
+        set_mario_action(m, ACT_PUNCHING, 0)
+    elseif sTest.timer >= TEST_FRAMES_PER_COSTUME then
+        sTest.timer = 0
+    end
+end
+
 local function on_before_mario_update(m)
+    if cs_context_index() == 0 then
+        if sTest then
+            test_update(m)
+            return
+        elseif (m.controller.buttonDown & L_TRIG) ~= 0 and (m.controller.buttonPressed & U_JPAD) ~= 0 and not is_game_paused() and cs_menu_is_allowed(m) then
+            test_start()
+            return
+        end
+    end
     if not cs_couch_active() then return end
     if sRosterSize ~= #characterTable then build_roster() end
     if not sSeatsLoaded then

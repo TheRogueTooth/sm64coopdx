@@ -290,8 +290,11 @@ static void gfx_opengl_vertex_array_set_attribs(struct ShaderProgram *prg) {
     size_t pos = 0;
 
     for (int i = 0; i < prg->num_attribs; i++) {
-        glEnableVertexAttribArray(prg->attrib_locations[i]);
-        glVertexAttribPointer(prg->attrib_locations[i], prg->attrib_sizes[i], GL_FLOAT, GL_FALSE, num_floats * sizeof(float), (void *) (pos * sizeof(float)));
+        // The driver drops attributes a fallback shader doesn't read
+        if ((GLint)prg->attrib_locations[i] >= 0) {
+            glEnableVertexAttribArray(prg->attrib_locations[i]);
+            glVertexAttribPointer(prg->attrib_locations[i], prg->attrib_sizes[i], GL_FLOAT, GL_FALSE, num_floats * sizeof(float), (void *) (pos * sizeof(float)));
+        }
         pos += prg->attrib_sizes[i];
     }
 }
@@ -309,55 +312,79 @@ static inline void gfx_opengl_set_texture_uniforms(struct ShaderProgram *prg, co
     }
 }
 
+#define MAX_LOGGED_SHADER_FAILURES 32
+
+// A material the driver rejects shouldn't take the whole game down, so failures get
+// reported here and the caller draws with a simpler shader instead
+static void gfx_opengl_log_shader_failure(const char *stage, const char *error, const char *source) {
+    static int sFailures = 0;
+    if (sFailures >= MAX_LOGGED_SHADER_FAILURES) { return; }
+    sFailures++;
+
+#ifdef __SWITCH__
+    FILE *f = fopen("sdmc:/switch/sm64coopdx/couch-shaders.txt", sFailures == 1 ? "w" : "a");
+#else
+    FILE *f = stderr;
+#endif
+    if (!f) { return; }
+    fprintf(f, "=== %s shader failed\n%s\n--- source\n%s\n", stage, error, source);
+#ifdef __SWITCH__
+    fclose(f);
+#endif
+}
+
+static GLuint gfx_opengl_compile_stage(GLenum type, const char *stage, const char *source) {
+    GLuint shader = glCreateShader(type);
+    if (!shader) {
+        gfx_opengl_log_shader_failure(stage, "could not create shader", source);
+        return 0;
+    }
+
+    GLint success = GL_FALSE;
+    glShaderSource(shader, 1, &source, NULL);
+    glCompileShader(shader);
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char error_log[1024] = "";
+        glGetShaderInfoLog(shader, sizeof(error_log), NULL, error_log);
+        gfx_opengl_log_shader_failure(stage, error_log, source);
+        glDeleteShader(shader);
+        return 0;
+    }
+    return shader;
+}
+
+// Returns 0 if the shader can't be used
 static GLuint gfx_opengl_compile_shader(const char *vertex_shader_raw, const char *fragment_shader_raw) {
-    GLint success;
+    GLuint vertex_shader = gfx_opengl_compile_stage(GL_VERTEX_SHADER, "vertex", vertex_shader_raw);
+    if (!vertex_shader) { return 0; }
 
-    GLuint vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-    if (!vertex_shader) {
-        fprintf(stderr, "Failed to create vertex shader!\n");
-        return -1;
-    }
-    glShaderSource(vertex_shader, 1, &vertex_shader_raw, NULL);
-    glCompileShader(vertex_shader);
-    glGetShaderiv(vertex_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        GLint max_length = 0;
-        glGetShaderiv(vertex_shader, GL_INFO_LOG_LENGTH, &max_length);
-        char error_log[1024];
-        fprintf(stderr, "Vertex shader compilation failed\n");
-        glGetShaderInfoLog(vertex_shader, max_length, &max_length, &error_log[0]);
-        fprintf(stderr, "%s\n", &error_log[0]);
-        sys_fatal("vertex shader compilation failed (see terminal)");
-    }
-
-    GLuint fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
+    GLuint fragment_shader = gfx_opengl_compile_stage(GL_FRAGMENT_SHADER, "fragment", fragment_shader_raw);
     if (!fragment_shader) {
-        fprintf(stderr, "Failed to create fragment shader!\n");
-        return -1;
-    }
-    glShaderSource(fragment_shader, 1, &fragment_shader_raw, NULL);
-    glCompileShader(fragment_shader);
-    glGetShaderiv(fragment_shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        GLint max_length = 0;
-        glGetShaderiv(fragment_shader, GL_INFO_LOG_LENGTH, &max_length);
-        char error_log[1024];
-        fprintf(stderr, "Fragment shader compilation failed\n");
-        glGetShaderInfoLog(fragment_shader, max_length, &max_length, &error_log[0]);
-        fprintf(stderr, "%s\n", &error_log[0]);
-        sys_fatal("fragment shader compilation failed (see terminal)");
+        glDeleteShader(vertex_shader);
+        return 0;
     }
 
     GLuint shader_program = glCreateProgram();
     glAttachShader(shader_program, vertex_shader);
     glAttachShader(shader_program, fragment_shader);
     glLinkProgram(shader_program);
-    
+
     glDetachShader(shader_program, vertex_shader);
     glDetachShader(shader_program, fragment_shader);
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);
-    
+
+    GLint linked = GL_FALSE;
+    glGetProgramiv(shader_program, GL_LINK_STATUS, &linked);
+    if (!linked) {
+        char error_log[1024] = "";
+        glGetProgramInfoLog(shader_program, sizeof(error_log), NULL, error_log);
+        gfx_opengl_log_shader_failure("linked", error_log, fragment_shader_raw);
+        glDeleteProgram(shader_program);
+        return 0;
+    }
+
     return shader_program;
 }
 
@@ -417,12 +444,12 @@ static const char *shader_item_to_str(uint32_t item, bool with_alpha, bool only_
                 return with_alpha ? "texVal0" : "texVal0.rgb";
             case SHADER_TEXEL0A:
                 return hint_single_element ? "texVal0.a" :
-                    (with_alpha ? "vec4(texelVal0.a, texelVal0.a, texelVal0.a, texelVal0.a)" : "vec3(texelVal0.a, texelVal0.a, texelVal0.a)");
+                    (with_alpha ? "vec4(texVal0.a, texVal0.a, texVal0.a, texVal0.a)" : "vec3(texVal0.a, texVal0.a, texVal0.a)");
             case SHADER_TEXEL1:
                 return with_alpha ? "texVal1" : "texVal1.rgb";
             case SHADER_TEXEL1A:
                 return hint_single_element ? "texVal1.a" :
-                    (with_alpha ? "vec4(texelVal1.a, texelVal1.a, texelVal1.a, texelVal1.a)" : "vec3(texelVal1.a, texelVal1.a, texelVal1.a)");
+                    (with_alpha ? "vec4(texVal1.a, texVal1.a, texVal1.a, texVal1.a)" : "vec3(texVal1.a, texVal1.a, texVal1.a)");
             case SHADER_COMBINED:
                 return with_alpha ? "texel" : "texel.rgb";
             case SHADER_COMBINEDA:
@@ -466,7 +493,7 @@ static const char *shader_item_to_str(uint32_t item, bool with_alpha, bool only_
             case SHADER_COMBINEDA:
                 return "texel.a";
             case SHADER_NOISE:
-                return "noise.a";
+                return "noise"; // a plain float, strict drivers reject noise.a
         }
     }
     return "unknown";
@@ -515,8 +542,8 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
     bool opt_dither = cc->cm.use_dither;
 #endif
 
-    char vs_buf[1024];
-    char fs_buf[2048];
+    char vs_buf[8192];
+    char fs_buf[8192];
     size_t vs_len = 0;
     size_t fs_len = 0;
     size_t num_floats = 4;
@@ -708,6 +735,42 @@ static struct ShaderProgram *gfx_opengl_create_and_load_new_shader(struct ColorC
     puts("End");*/
 
     GLuint shader_program = gfx_opengl_compile_shader(vs_buf, fs_buf);
+
+    // The driver rejected it, so draw the base texture and vertex color instead
+    if (!shader_program) {
+        fs_len = 0;
+#if defined(USE_GLES)
+        append_line(fs_buf, &fs_len, "#version 100");
+        append_line(fs_buf, &fs_len, "precision mediump float;");
+#else
+        append_line(fs_buf, &fs_len, "#version 120");
+#endif
+        bool use_tex0 = ccf.used_textures[0];
+        bool use_tex1 = ccf.used_textures[1] && !use_tex0;
+        if (use_tex0 || use_tex1) {
+            append_line(fs_buf, &fs_len, "varying vec2 vTexCoord;");
+            append_line(fs_buf, &fs_len, use_tex0 ? "uniform sampler2D uTex0;" : "uniform sampler2D uTex1;");
+        }
+        if (ccf.num_inputs > 0) {
+            fs_len += sprintf(fs_buf + fs_len, "varying vec%d vInput1;\n", opt_alpha ? 4 : 3);
+        }
+        append_line(fs_buf, &fs_len, "void main() {");
+        append_line(fs_buf, &fs_len, "vec4 color = vec4(1.0, 1.0, 1.0, 1.0);");
+        if (use_tex0 || use_tex1) {
+            append_line(fs_buf, &fs_len, use_tex0 ? "color = texture2D(uTex0, vTexCoord);" : "color = texture2D(uTex1, vTexCoord);");
+        }
+        if (ccf.num_inputs > 0) {
+            append_line(fs_buf, &fs_len, opt_alpha ? "color *= vInput1;" : "color.rgb *= vInput1;");
+        }
+        if (!opt_alpha) {
+            append_line(fs_buf, &fs_len, "color.a = 1.0;");
+        }
+        append_line(fs_buf, &fs_len, "gl_FragColor = color;");
+        append_line(fs_buf, &fs_len, "}");
+        fs_buf[fs_len] = '\0';
+
+        shader_program = gfx_opengl_compile_shader(vs_buf, fs_buf);
+    }
 
     size_t cnt = 0;
 
