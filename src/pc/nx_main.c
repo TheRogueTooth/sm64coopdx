@@ -1,6 +1,7 @@
 #ifdef __SWITCH__
 #include <switch.h>
 
+#include <stdalign.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -68,6 +69,47 @@ struct AudioAPI *audio_api = NULL;
 struct GfxWindowManagerAPI *wm_api = &WAPI;
 
 static bool gNxInitialized = false;
+
+// Homebrew crashes don't always leave an Atmosphere report, so write our own. Offsets are
+// relative to the start of the program, to be looked up in the build's sm64coopdx.elf
+#define CRASH_LOG_PATH "sdmc:/switch/sm64coopdx/couch-crash.txt"
+#define CRASH_LOG_MAX_FRAMES 32
+
+alignas(16) u8 __nx_exception_stack[0x8000];
+u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
+
+extern char __start__;
+
+static bool nx_address_is_readable(u64 address) {
+    MemoryInfo info = { 0 };
+    u32 pageInfo = 0;
+    if (address & 0x7) { return false; }
+    if (R_FAILED(svcQueryMemory(&info, &pageInfo, address))) { return false; }
+    return (info.perm & Perm_R) != 0;
+}
+
+void __libnx_exception_handler(ThreadExceptionDump *ctx) {
+    FILE *f = fopen(CRASH_LOG_PATH, "w");
+    if (!f) { return; }
+
+    u64 base = (u64)&__start__;
+    fprintf(f, "error_desc=0x%x far=0x%lx esr=0x%lx\n", ctx->error_desc, ctx->far.x, ctx->esr);
+    fprintf(f, "pc +0x%lx\nlr +0x%lx\nsp 0x%lx\n", ctx->pc.x - base, ctx->lr.x - base, ctx->sp.x);
+    for (int i = 0; i < 29; i++) {
+        fprintf(f, "x%d 0x%lx\n", i, ctx->cpu_gprs[i].x);
+    }
+
+    // Each frame starts with the previous frame pointer, then the return address
+    u64 frame = ctx->fp.x;
+    fprintf(f, "backtrace\n");
+    for (int i = 0; i < CRASH_LOG_MAX_FRAMES && frame != 0 && nx_address_is_readable(frame); i++) {
+        u64 *pair = (u64 *)frame;
+        fprintf(f, "  +0x%lx\n", pair[1] - base);
+        frame = pair[0];
+    }
+
+    fclose(f);
+}
 
 void nx_init(void) {
     accountInitialize(AccountServiceType_Application);
