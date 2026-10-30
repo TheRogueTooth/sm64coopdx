@@ -110,9 +110,10 @@ local TEST_PUNCH_FRAME = 90
 local sTest = nil
 
 local function test_apply(step)
-    local seat = cs_couch_seat()
-    if seat then
-        seat.char, seat.alt = step.char, step.alt
+    if cs_couch_active() then
+        -- Both players at once, which also covers two of the same character
+        gCSCouchSeats[0].char, gCSCouchSeats[0].alt = step.char, step.alt
+        gCSCouchSeats[1].char, gCSCouchSeats[1].alt = step.char, step.alt
     else
         currChar = step.char
         characterTable[step.char].currAlt = step.alt
@@ -126,17 +127,33 @@ local function test_start()
             table.insert(steps, { char = c, alt = alt })
         end
     end
-    local seat = cs_couch_seat()
     sTest = {
         steps = steps,
         index = 0,
         timer = 0,
         undo = {
-            char = seat and seat.char or currChar,
-            alt = seat and seat.alt or characterTable[currChar].currAlt,
+            char = currChar,
+            alt = characterTable[currChar].currAlt,
+            seats = {
+                [0] = { char = gCSCouchSeats[0].char, alt = gCSCouchSeats[0].alt },
+                [1] = { char = gCSCouchSeats[1].char, alt = gCSCouchSeats[1].alt },
+            },
         },
     }
     log_to_console("[test] start: " .. #steps .. " costumes", 0)
+end
+gCSCouchTestStart = test_start
+
+local function test_finish()
+    local undo = sTest.undo
+    currChar = undo.char
+    characterTable[undo.char].currAlt = undo.alt
+    for i = 0, 1 do
+        gCSCouchSeats[i].char, gCSCouchSeats[i].alt = undo.seats[i].char, undo.seats[i].alt
+    end
+    log_to_console("[test] finished, no crash", 0)
+    djui_popup_create("Character test finished", 3)
+    sTest = nil
 end
 
 local function test_update(m)
@@ -144,10 +161,7 @@ local function test_update(m)
         sTest.index = sTest.index + 1
         local step = sTest.steps[sTest.index]
         if step == nil then
-            test_apply(sTest.undo)
-            log_to_console("[test] finished, no crash", 0)
-            djui_popup_create("Character test finished", 3)
-            sTest = nil
+            test_finish()
             return
         end
         test_apply(step)

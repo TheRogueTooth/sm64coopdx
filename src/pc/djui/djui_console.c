@@ -5,6 +5,7 @@
 #include "engine/math_util.h"
 #include "pc/game_main.h"
 #include "pc/string_utils.h"
+#include "pc/fs/fs.h"
 
 #define MAX_CONSOLE_MESSAGES 500
 
@@ -132,9 +133,8 @@ static bool djui_console_on_key_down(UNUSED struct DjuiBase* base, int scancode)
     return true;
 }
 
-#ifdef __SWITCH__
-// There's no way to read the console on the Switch, so keep a copy on the SD card
-#define CONSOLE_LOG_PATH "sdmc:/switch/sm64coopdx/couch-log.txt"
+// There's no way to read the console on the Switch, so keep a copy next to the save data.
+// PC test runs read the same file
 #define CONSOLE_LOG_MAX_SIZE (1024 * 1024)
 #define CONSOLE_SEEN_SLOTS 2048
 #define CONSOLE_SEEN_PROBES 8
@@ -171,18 +171,17 @@ static void djui_console_log_to_sd(const char* message, enum ConsoleMessageLevel
     static size_t sWritten = 0;
     if (sWritten > CONSOLE_LOG_MAX_SIZE) { return; }
 
-    FILE* f = fopen(CONSOLE_LOG_PATH, sStarted ? "a" : "w");
+    FILE* f = fopen(fs_get_write_path("couch-log.txt"), sStarted ? "a" : "w");
     if (!f) { return; }
     sStarted = true;
     sWritten += fprintf(f, "[%d] %s\n", (int)level, message);
     fclose(f);
 }
-#endif
 
 void djui_console_message_create(const char* message, enum ConsoleMessageLevel level) {
-#ifdef __SWITCH__
     if (!djui_console_should_show(message)) { return; }
     djui_console_log_to_sd(message, level);
+#ifdef __SWITCH__
     // A script erroring every frame fills this quickly, and freeing the oldest message has
     // crashed here on the Switch. Nothing can read it on this platform, so just stop adding
     if (sDjuiConsoleMessages >= MAX_CONSOLE_MESSAGES - 1) { return; }
