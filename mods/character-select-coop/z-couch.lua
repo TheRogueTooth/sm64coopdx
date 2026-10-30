@@ -181,6 +181,8 @@ local function test_update(m)
 end
 
 local function on_before_mario_update(m)
+    -- This fires for every player slot, local players all read as 0 in their own update
+    if m.playerIndex ~= 0 then return end
     if cs_context_index() == 0 then
         if sTest then
             test_update(m)
